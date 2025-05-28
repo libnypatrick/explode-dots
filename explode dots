@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Exploding Swarm Dot with Link</title>
+  <style>
+    body {
+      margin: 0;
+      overflow: hidden;
+      background: #000;
+      position: relative;
+    }
+    canvas {
+      display: block;
+    }
+    #starLink {
+      position: absolute;
+      cursor: pointer;
+      display: none;
+      width: 40px;
+      height: 40px;
+      top: 0;
+      left: 0;
+      z-index: 10;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.9.0/p5.min.js"></script>
+</head>
+<body>
+<a id="starLink" href="https://www.behance.net/libnypatrick" target="_blank" aria-label="Star Link"></a>
+<script>
+let center;
+let threshold = 200;
+let particles = [];
+let particleCount = 120;
+let dispersing = false;
+let timer = 0;
+
+let colors = [
+  '#ff2e7e', '#f29cc6', '#f98bbd', '#c965e3',
+  '#ae60c7', '#e6ccf5', '#bb84d9', '#d52674',
+  '#00b589', '#30343f'
+];
+
+const starLink = document.getElementById('starLink');
+const lilac = '#C8A2C8';
+
+let baseUnit; // New: base unit for scaling
+
+function easeInOut(t) {
+  return t < 0.5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+
+function setup() {
+  createCanvas(windowWidth, windowHeight);
+  baseUnit = min(windowWidth, windowHeight);
+  center = createVector(width / 2, height / 2);
+  noStroke();
+
+  for (let i = 0; i < particleCount; i++) {
+    particles.push(new Particle(center, colors[i % colors.length]));
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  baseUnit = min(windowWidth, windowHeight);
+  center.set(width / 2, height / 2);
+  for (let p of particles) {
+    p.origin.set(center);
+    p.resetDistance(); // New: update distance on resize
+  }
+  updateStarLinkPosition();
+}
+
+// Use baseUnit for threshold
+function draw() {
+  // Motion blur: draw a translucent black rect over the canvas each frame
+  // 30 frames = 0.033 opacity for smooth blur
+  background(0, 33); // 33/255 ≈ 0.13 alpha, adjust for desired blur strength
+
+  threshold = baseUnit * 0.25; // e.g., 25% of baseUnit
+
+  let d = dist(mouseX, mouseY, center.x, center.y);
+  dispersing = d < threshold;
+
+  // Reduce explode and implode speed by 0.75x
+  let speed = 0.15 * 0.75;
+
+  if (dispersing && timer < 1) timer += speed;
+  else if (!dispersing && timer > 0) timer -= speed;
+  timer = constrain(timer, 0, 1);
+  let eased = easeInOut(timer);
+
+  for (let p of particles) {
+    p.update(eased);
+    p.display();
+  }
+
+  if (timer < 0.1) {
+    fill(lilac);
+    noStroke();
+    circle(center.x, center.y, baseUnit * 0.025); // Scaled dot
+  }
+
+  if (timer > 0.2) {
+    // Increase asterisk size by 1.25x, retain thickness
+    drawStar(center.x, center.y, baseUnit * 0.07 * 1.25, 6);
+    starLink.style.display = 'block';
+    updateStarLinkPosition();
+  } else {
+    starLink.style.display = 'none';
+  }
+}
+
+function drawStar(x, y, length, lineWeight = 3) {
+  push();
+  translate(x, y);
+
+  let wiggleAngle = sin(frameCount * 0.3) * 0.1;
+  rotate(-PI / 6 + wiggleAngle);
+
+  // Increase asterisk size by 1.25x, increase thickness by 1.75x
+  let bigLength = length; // Already scaled in draw()
+  let thickWeight = lineWeight * 1.75; // Increase thickness by 1.75x
+
+  stroke(lilac);
+  strokeWeight(thickWeight);
+  noFill();
+
+  for (let i = 0; i < 3; i++) {
+    rotate(PI / 3);
+    line(-bigLength / 2, 0, bigLength / 2, 0);
+  }
+
+  pop();
+}
+
+function updateStarLinkPosition() {
+  // Match asterisk size (1.25x)
+  const size = baseUnit * 0.07 * 1.25;
+  starLink.style.left = (center.x - size / 2) + 'px';
+  starLink.style.top = (center.y - size / 2) + 'px';
+  starLink.style.width = size + 'px';
+  starLink.style.height = size + 'px';
+}
+
+class Particle {
+  constructor(origin, col) {
+    this.origin = origin.copy();
+    this.color = color(col);
+    this.angle = random(TWO_PI);
+    this.setDistance();
+    this.phase = random(TWO_PI);
+    this.speed = random(0.03, 0.08);
+    this.pos = origin.copy();
+    // Reduce particle size by 0.5x
+    this.baseSize = random(baseUnit * 0.004, baseUnit * 0.0065); // Scaled size reduced by half
+    this.maxSizeFactor = 2.5;
+  }
+
+  setDistance() {
+    // Reduce the outer circle limit to 0.75x of previous spread
+    this.distance = random(baseUnit * 0.675, baseUnit * 1.125);
+  }
+
+  resetDistance() {
+    this.setDistance();
+    // Reduce particle size by 0.5x
+    this.baseSize = random(baseUnit * 0.004, baseUnit * 0.0065);
+  }
+
+  update(eased) {
+    let flutter = 0.7 + 0.3 * sin(frameCount * this.speed + this.phase);
+    let r = this.distance * eased * flutter;
+    let offset = p5.Vector.fromAngle(this.angle).mult(r);
+    this.pos = p5.Vector.add(this.origin, offset);
+
+    // Size increases as they move outward
+    this.size = this.baseSize * (1 + (r / (baseUnit * 0.2)) * this.maxSizeFactor);
+  }
+
+  display() {
+    fill(this.color);
+    noStroke();
+    circle(this.pos.x, this.pos.y, this.size);
+  }
+}
+</script>
+</body>
+</html>
